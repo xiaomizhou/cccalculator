@@ -5,16 +5,11 @@ from multiprocessing.pool import Pool
 
 import sys
 
-__version__ = '0.0.1'
+__version__ = '0.0.3'
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SO_FILE = os.path.join(BASE_DIR,'cccalculate','build','my-languages.so')
+SO_FILE = os.path.join(BASE_DIR,'cccalculate','lang_build','my-languages.so')
 VENDOR_FILE = os.path.join(BASE_DIR,'cccalculate','vendor','tree-sitter-python')
-Language.build_library(
-  SO_FILE,
-  [VENDOR_FILE]
-)
-
 PY_LANGUAGE = Language(SO_FILE, 'python')
 parser = Parser()
 parser.set_language(PY_LANGUAGE)

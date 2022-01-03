@@ -1,14 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import with_statement
 
-from setuptools import setup
+from setuptools import setup,find_packages
 
-
-def get_version(fname='cccalculate/calculate.py'):
-    with open(fname) as f:
-        for line in f:
-            if line.startswith('__version__'):
-                return eval(line.split('=')[-1])
 
 
 def get_long_description():
@@ -21,7 +15,7 @@ def get_long_description():
 
 setup(
     name='cccalculator',
-    version=get_version(),
+    version='0.0.3',
     description="cyclomatic complexity calculator for python file",
     long_description=get_long_description(),
     long_description_content_type="text/markdown",
@@ -30,8 +24,11 @@ setup(
     author_email='wangli0829@gmail.com',
     url='https://github.com/xiaomizhou/cccalculator',
     license='MIT license',
-    py_requires=["cccalculate"],
-    zip_safe=False,
+    install_requires=["tree_sitter"],
+    requires=["tree_sitter"],
+    packages=find_packages(),
+    include_package_data=True,
+    # py_requires=["cccalculate"],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
