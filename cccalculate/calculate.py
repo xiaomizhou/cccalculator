@@ -1,34 +1,35 @@
 from tree_sitter import Language, Parser
-import multiprocessing
+import multiprocessing as mp
 import os
 from multiprocessing.pool import Pool
 
-Language.build_library(
-  # Store the library in the `build` directory
-  'build/my-languages.so',
+import sys
 
-  # Include one or more languages
-  [
-    # 'vendor/tree-sitter-go',
-    # 'vendor/tree-sitter-javascript',
-    'vendor/tree-sitter-python'
-  ]
+__version__ = '0.0.1'
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SO_FILE = os.path.join(BASE_DIR,'cccalculate','build','my-languages.so')
+VENDOR_FILE = os.path.join(BASE_DIR,'cccalculate','vendor','tree-sitter-python')
+Language.build_library(
+  SO_FILE,
+  [VENDOR_FILE]
 )
 
+PY_LANGUAGE = Language(SO_FILE, 'python')
+parser = Parser()
+parser.set_language(PY_LANGUAGE)
 
 def read_file(filename):
     with open(filename, 'r') as f:
         return f.read()
-PY_LANGUAGE = Language('build/my-languages.so', 'python')
-parser = Parser()
-parser.set_language(PY_LANGUAGE)
-
 
 class MccabeFactory(object):
     """go through every node of AST to record each node"""
     def __init__(self):
         # last processed verticle
         self.end_verticle = None
+        self.edge_list = []
+        self.edge = None
 
     def add_to_path(self, verticle):
         # todo: add commit
@@ -42,9 +43,31 @@ class MccabeFactory(object):
         visit_func = getattr(self, node_name+'_visitor',self.linear_statement_visitor)
         return visit_func(node)
 
-    def do_visit(self,tree,file_name):
-        self.edge = Edge(file_name)
+    def do_visit(self,tree):
         self.visit_statement(tree.root_node)
+
+
+    def class_definition_visitor(self,node):
+        line_start = node.start_point[0] + 1
+        class_name = 'class:{}'.format(line_start)
+        for inode in node.children:
+            if inode.type == 'block':
+                for iinode in inode.children:
+                    if iinode.type == 'function_definition':
+                        self.function_definition_visitor(iinode, class_name=class_name)
+
+    def function_definition_visitor(self, node,class_name=None):
+        line_start = node.start_point[0] + 1
+        fun_name = 'fun:{}'.format(line_start)
+        if class_name:
+            fun_name = class_name + '--' + fun_name
+        fun_verticle = Verticle(fun_name)
+        self.edge = Edge(fun_name)
+        self.end_verticle = fun_verticle
+        self.block_visitor(node)
+        self.end_verticle = None
+        self.edge_list.append(self.edge)
+        self.edge = None
 
     def module_visitor(self, node):
         for inode in node.children:
@@ -53,6 +76,8 @@ class MccabeFactory(object):
     children_visitor = module_visitor
 
     def with_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'with:{}'.format(line_start)
         with_verticle = Verticle(name)
@@ -64,6 +89,8 @@ class MccabeFactory(object):
             if inode.type == 'block':
                 self.children_visitor(inode)
     def if_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'if:{}'.format(line_start)
         if_verticle = Verticle(name)
@@ -109,9 +136,9 @@ class MccabeFactory(object):
             self.edge.link_verticles(iend, final_verticle)
         self.end_verticle = final_verticle
 
-
-
     def try_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'try:{}'.format(line_start)
         try_verticle = Verticle(name)
@@ -121,24 +148,17 @@ class MccabeFactory(object):
             self.add_to_path(try_verticle)
         self.try_block_visitor(try_verticle, node)
 
-    def function_definition_visitor(self, node):
-        line_start = node.start_point[0] + 1
-        name = 'fun:{}'.format(line_start)
-        fun_verticle = Verticle(name)
-        self.end_verticle = fun_verticle
-        self.block_visitor(node)
-        final_verticle = Verticle('')
-        self.edge.link_verticles(self.end_verticle, final_verticle)
-        self.edge.link_verticles(fun_verticle, final_verticle)
-        self.end_verticle = final_verticle
-
     def linear_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'simple:{}'.format(line_start)
         sim_verticle = Verticle(name)
         self.add_to_path(sim_verticle)
 
     def while_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'while:{}'.format(line_start)
         while_verticle = Verticle(name)
@@ -152,6 +172,8 @@ class MccabeFactory(object):
         self.edge.link_verticles(while_verticle, final_verticle)
 
     def for_statement_visitor(self, node):
+        if self.edge == None:
+            return
         line_start = node.start_point[0] + 1
         name = 'for:{}'.format(line_start)
         for_verticle = Verticle(name)
@@ -172,6 +194,10 @@ class Verticle(object):
 
 
 class Edge(object):
+    """the edge_verticle dictionary records the verticles and edges of the python file.
+        keys of edge_verticle are all the verticles.
+        value of each key represents all the possible next verticles of the key.
+    """
     def __init__(self,name):
         self.name = name
         self.edge_verticle = {}
@@ -181,55 +207,66 @@ class Edge(object):
         self.edge_verticle[v2] = []
 
     def compute_complex(self):
-        # print('nnnnnnnnnnnnnnnnnnnnnnnn')
+        # You can print the edge_verticle dictionary to see the flow graph
         # for key,value in self.edge_verticle.items():
         #     print('key--{}, value--{}'.format(key.name,[i.name for i in value]))
         nodes = len(self.edge_verticle)
         edges = sum([len(i) for i in self.edge_verticle.values()])
         return edges-nodes+2
 
-def split_list(file_list, n):
-    for i in range(0, len(file_list), n):
-        yield file_list[i:i + n]
-
-def do_calculate(file_name):
+def do_calculate(file_name,lock):
     code = read_file(file_name)
     tree = parser.parse(bytes(code, "utf8"))
     visitor = MccabeFactory()
-    visitor.do_visit(tree,file_name)
-    print(visitor.edge.name + '----------' + str(visitor.edge.compute_complex())+'\n')
+    visitor.do_visit(tree)
+    if not lock:
+        print(file_name + '\n')
+        for iedge in visitor.edge_list:
+            print('   ' + iedge.name + '----------' + str(iedge.compute_complex())+'\n')
+    else:
+        lock.acquire()
+        print(file_name + '\n')
+        for iedge in visitor.edge_list:
+            print('   ' + iedge.name + '----------' + str(iedge.compute_complex()) + '\n')
+        lock.release()
 
-def main(file_path):
+def do_calculate_from_code(code):
+    tree = parser.parse(bytes(code, "utf8"))
+    visitor = MccabeFactory()
+    visitor.do_visit(tree)
+    return [iedge.compute_complex() for iedge in visitor.edge_list]
+
+def do_calculate_from_directory(file_path):
+    file_list = []
+    for _, _, files in os.walk(file_path):
+        for ifile in files:
+            if ifile.endswith('.py'):
+                file_list.append(os.path.join(file_path, ifile))
+    worker_nums = mp.cpu_count()
+    p = Pool(worker_nums)
+    manager = mp.Manager()
+    lock = manager.Lock()
+    for ifile in file_list:
+        p.apply_async(do_calculate, args=(ifile,lock))
+    p.close()
+    p.join()
+
+
+def main(argvs):
+    file_path = argvs[0]
     file_list = []
     for _,_,files in os.walk(file_path):
         for ifile in files:
             if ifile.endswith('.py'):
                 file_list.append(os.path.join(file_path,ifile))
-    worker_nums = multiprocessing.cpu_count()
+    worker_nums = mp.cpu_count()
+    manager = mp.Manager()
+    lock = manager.Lock()
     p = Pool(worker_nums)
     for ifile in file_list:
-        p.apply_async(do_calculate, args=(ifile,))
+        p.apply_async(do_calculate, args=(ifile,lock))
     p.close()
     p.join()
-    print('finished')
-
-
-
-    # root_node = tree.root_node
-    # assert root_node.type == 'module'
-    # assert root_node.start_point == (1, 0)
-    # assert root_node.end_point == (3, 13)
-    #
-    # function_node = root_node.children[0]
-    # assert function_node.type == 'function_definition'
-    # assert function_node.child_by_field_name('name').type == 'identifier'
-    #
-    # function_name_node = function_node.children[1]
-    # assert function_name_node.type == 'identifier'
-    # assert function_name_node.start_point == (1, 4)
-    # assert function_name_node.end_point == (1, 7)
-
 
 if __name__ == '__main__':
-    file_path = '/Users/liwang/Documents/myself/merico/test_files/'
-    main(file_path)
+    main(sys.argv[1:])

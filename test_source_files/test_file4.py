@@ -4,10 +4,8 @@ import requests
 import time
 import settings
 
-
-env_list = settings.ENV
-
-try:
+def myfun():
+    env_list = settings.ENV
     for env in env_list:
         base_url = get_url(env)
         if base_url == 'eeee':
@@ -16,14 +14,7 @@ try:
             print(3456)
         elif base_url == 'dddddddd':
             print(678776)
+        elif base_url == 'aaaaaaaaa':
+            print(678987656789)
         else:
             print(11111)
-except Exception1 as e:
-    print(str(e))
-except Exceptio2 as e:
-    print(1111)
-
-
-
-
-
