@@ -4,7 +4,7 @@ from __future__ import with_statement
 from setuptools import setup
 
 
-def get_version(fname='src/cccalculator.py'):
+def get_version(fname='cccalculate/calculate.py'):
     with open(fname) as f:
         for line in f:
             if line.startswith('__version__'):
